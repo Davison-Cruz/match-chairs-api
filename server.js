@@ -17,6 +17,28 @@ const pool = new Pool({
   },
 });
 
+// Middleware de Autenticação (O Segurança da Porta)
+const verificarToken = (req, res, next) => {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token)
+    return res
+      .status(403)
+      .json({ erro: "Acesso negado. Cadê a sua pulseira VIP (Token)?" });
+
+  jwt.verify(token, process.env.JWT_SECRET, (erro, usuarioDecodificado) => {
+    if (erro) {
+      return res
+        .status(401)
+        .json({ erro: "Token inválido ou expirado. Faça login novamente." });
+    }
+
+    req.usuarioId = usuarioDecodificado.id;
+    next();
+  });
+};
+
 app.get("/", (req, res) => {
   res.json({
     projeto: "MatchChairs API",
@@ -129,7 +151,7 @@ app.post("/login", async (req, res) => {
     }
 
     const payload = {
-      id: usuario.i,
+      id: usuario.id,
       nome: usuario.nome,
     };
 
@@ -153,6 +175,101 @@ app.post("/login", async (req, res) => {
   }
 });
 
+app.post("/casais/gerar-codigo", verificarToken, async (req, res) => {
+  try {
+    const meuId = req.usuarioId;
+
+    const codigoAleatorio = Math.random()
+      .toString(36)
+      .substring(2, 8)
+      .toUpperCase();
+    const codigoConvite = `MTC-${codigoAleatorio}`;
+
+    const cliente = await pool.connect();
+
+    const checaExistente = await cliente.query(
+      "SELECT * FROM casais WHERE usuario1_id = $1 OR usuario2_id = $1",
+      [meuId],
+    );
+
+    if (checaExistente.rows.length > 0) {
+      cliente.release();
+      return res.status(400).json({
+        erro: "Você já está em um vínculo ou já possui um código gerado. ",
+      });
+    }
+
+    const query = `
+      INSERT INTO casais (codigo_convite, usuario1_id)
+      VALUES ($1, $2)
+      RETURNING codigo_convite;
+      `;
+
+    const resultado = await cliente.query(query, [codigoConvite, meuId]);
+    cliente.release();
+
+    res.status(201).json({
+      sucesso: true,
+      mensagem: "Código gerado com sucesso! Envie para o seu amor. 💌",
+      codigo: resultado.rows[0].codigo_convite,
+    });
+  } catch (erro) {
+    console.error("Erro ao gerar código:", erro);
+    res.status(500).json({ erro: "Erro interno no servidor." });
+  }
+});
+
+//Aceitar o convite
+app.post("/casais/vincular", verificarToken, async (req, res) => {
+  try {
+    const meuId = req.usuarioId;
+    const { codigo_convite } = req.body;
+
+    if (!codigo_convite) {
+      return res
+        .status(400)
+        .json({ erro: "Por favor, insira o código de convite" });
+    }
+
+    const cliente = await pool.connect();
+
+    const buscaCasal = await cliente.query(
+      "SELECT * FROM casais WHERE codigo_convite = $1 AND usuario2_id IS NULL",
+      [codigo_convite],
+    );
+
+    if (buscaCasal.rows.length === 0) {
+      cliente.release();
+      return res
+        .status(404)
+        .json({ erro: "Código inválido, expirado ou já utilizado." });
+    }
+
+    const idCasal = buscaCasal.rows[0].id;
+    const idUsuario1 = buscaCasal.rows[0].usuario1_id;
+
+    if (idUsuario1 === meuId) {
+      cliente.release();
+      return res
+        .status(400)
+        .json({ erro: "Você não pode vincular a conta com você mesmo!" });
+    }
+
+    await cliente.query("UPDATE casais SET usuario2_id = $1 WHERE id = $2", [
+      meuId,
+      idCasal,
+    ]);
+    cliente.release();
+
+    res.json({
+      sucesso: true,
+      mensagem: "Vínculo de casal criado com sucesso!",
+    });
+  } catch (erro) {
+    console.error("Erro ao vincular casal:", erro);
+    res.status(500).json({ erro: "Erro interno no servidor." });
+  }
+});
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
