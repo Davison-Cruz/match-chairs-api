@@ -272,21 +272,37 @@ app.post("/casais/vincular", verificarToken, async (req, res) => {
   }
 });
 
+// Buscar Filmes em Alta (Fila Inteligente: Sem repetecos)
 app.get("/filmes/em-alta", verificarToken, async (req, res) => {
   try {
-    const urlTMDB =
-      "https://api.themoviedb.org/3/movie/popular?language=pt-BR&page=1";
+    const meuId = req.usuarioId;
+    const cliente = await pool.connect();
 
+    const buscaMeusVotos = await cliente.query(
+      "SELECT filme_id_tmdb FROM votos WHERE usuario_id = $1",
+      [meuId],
+    );
+    cliente.release();
+
+    const filmesVotados = buscaMeusVotos.rows.map((voto) => voto.filme_id_tmdb);
+
+    const paginaSolicitada = req.query.pagina || 1;
+
+    const urlTMDB = `https://api.themoviedb.org/3/movie/popular?language=pt-BR&page=${paginaSolicitada}`;
     const opcoes = {
       headers: {
         accept: "application/json",
-        authorization: `Bearer ${process.env.TMDB_TOKEN}`,
+        Authorization: `Bearer ${process.env.TMDB_TOKEN}`,
       },
     };
 
     const respostaTMDB = await axios.get(urlTMDB, opcoes);
 
-    const filmesLimpos = respostaTMDB.data.results.map((filme) => {
+    const filmesIneditos = respostaTMDB.data.results.filter(
+      (filme) => !filmesVotados.includes(filme.id),
+    );
+
+    const filmesLimpos = filmesIneditos.map((filme) => {
       return {
         id: filme.id,
         titulo: filme.title,
@@ -300,12 +316,13 @@ app.get("/filmes/em-alta", verificarToken, async (req, res) => {
 
     res.json({
       sucesso: true,
-      quantidade: respostaTMDB.data.results.length,
+      quantidade_recebida_tmdb: respostaTMDB.data.results.length,
+      quantidade_enviada_celular: filmesLimpos.length, // Aqui você vai ver a diferença!
       filmes: filmesLimpos,
     });
   } catch (erro) {
     console.error(
-      "Erro ao buscar filmes no TMDB",
+      "Erro ao buscar filmes no TMDB:",
       erro.response ? erro.response.data : erro.message,
     );
     res
@@ -471,6 +488,7 @@ app.get("/matches", verificarToken, async (req, res) => {
     res.status(500).json({ erro: "Erro interno no servidor." });
   }
 });
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
