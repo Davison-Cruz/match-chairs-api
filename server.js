@@ -4,6 +4,7 @@ const cors = require("cors");
 const { Pool } = require("pg");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const axios = require("axios");
 
 const app = express();
 
@@ -17,7 +18,7 @@ const pool = new Pool({
   },
 });
 
-// Middleware de Autenticação (O Segurança da Porta)
+// Middleware de Autenticação (nao vai passar ninguem)
 const verificarToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
@@ -219,7 +220,7 @@ app.post("/casais/gerar-codigo", verificarToken, async (req, res) => {
   }
 });
 
-//Aceitar o convite
+//Aceitar o convite ( só pra eu não esquecer por enquanto)
 app.post("/casais/vincular", verificarToken, async (req, res) => {
   try {
     const meuId = req.usuarioId;
@@ -270,6 +271,49 @@ app.post("/casais/vincular", verificarToken, async (req, res) => {
     res.status(500).json({ erro: "Erro interno no servidor." });
   }
 });
+
+app.get("/filmes/em-alta", verificarToken, async (req, res) => {
+  try {
+    const urlTMDB =
+      "https://api.themoviedb.org/3/movie/popular?language=pt-BR&page=1";
+
+    const opcoes = {
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${process.env.TMDB_TOKEN}`,
+      },
+    };
+
+    const respostaTMDB = await axios.get(urlTMDB, opcoes);
+
+    const filmesLimpos = respostaTMDB.data.results.map((filme) => {
+      return {
+        id: filme.id,
+        titulo: filme.title,
+        sinopse: filme.overview,
+        nota: filme.vote_average,
+        poster_url: filme.poster_path
+          ? `https://image.tmdb.org/t/p/w500${filme.poster_path}`
+          : null,
+      };
+    });
+
+    res.json({
+      sucesso: true,
+      quantidade: respostaTMDB.data.results.length,
+      filmes: filmesLimpos,
+    });
+  } catch (erro) {
+    console.error(
+      "Erro ao buscar filmes no TMDB",
+      erro.response ? erro.response.data : erro.message,
+    );
+    res
+      .status(500)
+      .json({ erro: "Falha ao se comunicar com o catálogo de filmes." });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
