@@ -314,6 +314,85 @@ app.get("/filmes/em-alta", verificarToken, async (req, res) => {
   }
 });
 
+app.post("/votos", verificarToken, async (req, res) => {
+  try {
+    const meuId = req.usuarioId;
+    const { filme_id, acao } = req.body;
+
+    if (!filme_id || !acao) {
+      return res
+        .status(400)
+        .json({ erro: "ID do filmes e ação são obrigatórios" });
+    }
+
+    const cliente = await pool.connect();
+
+    try {
+      await cliente.query(
+        "INSERT INTO votos (usuario_id, filme_id_tmdb, acao) VALUES ($1, $2, $3)",
+        [meuId, filme_id, acao],
+      );
+    } catch (err) {
+      if (err.code === "23505") {
+        cliente.release();
+        return res.status(400).json({ erro: "Você já votou nesse filme" });
+      }
+      throw err;
+    }
+
+    let deuMatch = false;
+
+    if (acao === "like" || acao === "superlike") {
+      const buscaCasal = await cliente.query(
+        "SELECT id, usuario1_id, usuario2_id FROM casais WHERE usuario1_id = $1 OR usuario2_id = $1",
+        [meuId],
+      );
+
+      if (
+        buscaCasal.rows.length > 0 &&
+        buscaCasal.rows[0].usuario2_id !== null
+      ) {
+        const casal = buscaCasal.rows[0];
+
+        const parceiroId =
+          casal.usuario1_id === meuId ? casal.usuario2_id : casal.usuario1_id;
+
+        const buscaVotoParceiro = await cliente.query(
+          "SELECT * FROM votos WHERE usuario_id = $1 AND filme_id_tmdb = $2 AND acao IN ('like', 'superlike')",
+          [parceiroId, filme_id],
+        );
+
+        if (buscaVotoParceiro.rows.length > 0) {
+          deuMatch = true;
+
+          const checaMatch = await cliente.query(
+            "SELECT * FROM lista_matches WHERE casal_id = $1 and filme_id_tmdb = $2",
+            [casal.id, filme_id],
+          );
+
+          if (checaMatch.rows.length === 0) {
+            await cliente.query(
+              "INSERT INTO lista_matches (casal_id, filme_id_tmdb) VALUES ($1, $2)",
+              [casal.id, filme_id],
+            );
+          }
+        }
+      }
+    }
+
+    cliente.release();
+
+    res.status(201).json({
+      sucesso: true,
+      mensagem: "Voto computado com sucesso!",
+      match: deuMatch,
+    });
+  } catch (erro) {
+    console.error("Erro ao registrar voto", erro);
+    res.status(500).json({ erro: "Erro interno no servidor." });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
