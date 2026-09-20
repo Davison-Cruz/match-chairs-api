@@ -393,6 +393,84 @@ app.post("/votos", verificarToken, async (req, res) => {
   }
 });
 
+app.get("/matches", verificarToken, async (req, res) => {
+  try {
+    const meuId = req.usuarioId;
+    const cliente = await pool.connect();
+
+    const buscaCasal = await cliente.query(
+      "SELECT id FROM casais WHERE usuario1_id = $1 OR usuario2_id = $1",
+      [meuId],
+    );
+
+    if (buscaCasal.rows.length === 0) {
+      cliente.release();
+      return res
+        .status(404)
+        .json({ erro: "Você ainda não está em um vínculo de casal." });
+    }
+
+    const casalId = buscaCasal.rows[0].id;
+
+    const buscaMatches = await cliente.query(
+      "SELECT filme_id_tmdb, data_match FROM lista_matches WHERE casal_id = $1 ORDER BY data_match DESC",
+      [casalId],
+    );
+    cliente.release();
+
+    if (buscaMatches.rows.length === 0) {
+      return res.json({
+        sucesso: true,
+        mensagem: "Vocês ainda não têm matches. Continuem votando!",
+        filmes: [],
+      });
+    }
+
+    const opcoesTMDB = {
+      headers: {
+        accept: "application/json",
+        Authorization: `Bearer ${process.env.TMDB_TOKEN}`,
+      },
+    };
+
+    const promessasFilmes = buscaMatches.rows.map(async (match) => {
+      try {
+        const url = `https://api.themoviedb.org/3/movie/${match.filme_id_tmdb}?language=pt-BR`;
+        const resposta = await axios.get(url, opcoesTMDB);
+        const filme = resposta.data;
+
+        return {
+          id: filme.id,
+          titulo: filme.title,
+          sinopse: filme.overview,
+          poster_url: filme.poster_path
+            ? `https://image.tmdb.org/t/p/w500${filme.poster_path}`
+            : null,
+          data_match: match.data_match,
+        };
+      } catch (erroTMDB) {
+        console.error(
+          `Erro ao buscar detalhes do filme ${match.filme_id_tmdb}:`,
+          erroTMDB.message,
+        );
+        return null;
+      }
+    });
+
+    let filmesMatches = await Promise.all(promessasFilmes);
+
+    filmesMatches = filmesMatches.filter((filme) => filme !== null);
+
+    res.json({
+      sucesso: true,
+      quantidade: filmesMatches.length,
+      filmes: filmesMatches,
+    });
+  } catch (erro) {
+    console.error("Erro ao buscar a lista de matches:", erro);
+    res.status(500).json({ erro: "Erro interno no servidor." });
+  }
+});
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
