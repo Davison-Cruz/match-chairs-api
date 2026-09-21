@@ -489,6 +489,58 @@ app.get("/matches", verificarToken, async (req, res) => {
   }
 });
 
+app.get("/meus-votos", verificarToken, async (req, res) => {
+  try {
+    const meuId = req.usuarioId;
+    const cliente = await pool.connect();
+
+    const buscaVotos = await cliente.query(
+      "SELECT filme_id_tmdb, acao FROM votos WHERE usuario_id = $1 AND acao IN ('like', 'superlike') ORDER BY id DESC",
+      [meuId],
+    );
+    cliente.release();
+
+    if (buscaVotos.rows.length === 0) {
+      return res.json({ sucesso: true, filmes: [] });
+    }
+
+    const opcoesTMDB = {
+      headers: {
+        accept: "application/json",
+        Authorization: `Bearer ${process.env.TMDB_TOKEN}`,
+      },
+    };
+
+    const promessasFilmes = buscaVotos.rows.map(async (voto) => {
+      try {
+        const resposta = await axios.get(
+          `https://api.themoviedb.org/3/movie/${voto.filme_id_tmdb}?language=pt-BR`,
+          opcoesTMDB,
+        );
+        return {
+          id: resposta.data.id,
+          titulo: resposta.data.title,
+          poster_url: resposta.data.poster_path
+            ? `https://image.tmdb.org/t/p/w200${resposta.data.poster_path}`
+            : null,
+          acao: voto.acao,
+        };
+      } catch (err) {
+        return null;
+      }
+    });
+
+    let filmesFormatados = await Promise.all(promessasFilmes);
+    res.json({
+      sucesso: true,
+      filmes: filmesFormatados.filter((f) => f !== null),
+    });
+  } catch (erro) {
+    console.error("Erro em /meus-votos:", erro);
+    res.status(500).json({ erro: "Erro interno no servidor." });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {

@@ -1,0 +1,25 @@
+@import url("https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@300;400;600;800&display=swap");
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body,
+html {
+  width: 100%;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+input::placeholder {
+  color: currentColor;
+  opacity: 0.5;
+}
+
+input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.5);
+  background: rgba(0, 0, 0, 0.3) !important;
+}
