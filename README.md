@@ -2,6 +2,9 @@
 
 MatchChairs é uma aplicação web Full-stack com foco em mobile-first, criada para resolver um problema clássico: a indecisão na hora de escolher um filme para assistir a dois. Com uma interface estilo "Tinder" (Swipe), os usuários podem avaliar filmes em alta e o sistema cruza os dados para alertar quando há um "Match" perfeito.
 
+<img width="1305" height="612" alt="matchchairs" src="https://github.com/user-attachments/assets/cc6f3080-8984-44cd-9808-76eec5cb0ade" />
+
+
 ## 🚀 Funcionalidades
 
 - **Autenticação Segura:** Login e Registro com criptografia (bcrypt) e JWT (JSON Web Tokens).
